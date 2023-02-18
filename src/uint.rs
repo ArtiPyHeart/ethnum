@@ -1,5 +1,15 @@
 //! Root module for 256-bit unsigned integer type.
 
+use alloc::vec::IntoIter;
+use core::num::ParseIntError;
+
+use rayon::iter::{IndexedParallelIterator, ParallelIterator};
+use rayon::iter::plumbing::{bridge, Consumer, ProducerCallback, UnindexedConsumer};
+
+use crate::I256;
+
+pub use self::convert::AsU256;
+
 mod api;
 mod cmp;
 mod convert;
@@ -7,10 +17,6 @@ mod fmt;
 mod iter;
 mod ops;
 mod parse;
-
-pub use self::convert::AsU256;
-use crate::I256;
-use core::num::ParseIntError;
 
 /// A 256-bit unsigned integer type.
 #[derive(Clone, Copy, Default, Eq, Hash, PartialEq)]
@@ -250,13 +256,62 @@ impl U256 {
     }
 }
 
+struct U256Range {
+    start: U256,
+    end: U256,
+}
+
+impl U256Range {
+    fn new(start: U256, end: U256) -> Self {
+        Self { start, end }
+    }
+}
+
+impl Iterator for U256Range {
+    type Item = U256;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.start < self.end {
+            let result = self.start;
+            self.start += U256::new(1);
+            Some(result)
+        } else {
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::uint::U256;
+    use crate::uint::{U256, U256Range};
 
     #[test]
     #[allow(clippy::float_cmp)]
     fn converts_to_f64() {
         assert_eq!(U256::from_words(1, 0).as_f64(), 2.0f64.powi(128))
     }
+
+    #[test]
+    fn iterates() {
+        let range = U256Range::new(
+            U256::from_str_hex("0x0").unwrap(),
+            U256::from_str_hex("0x2").unwrap(),
+        );
+        let mut iter = range.into_iter();
+        assert_eq!(iter.next(), Some(U256::new(0)));
+        assert_eq!(iter.next(), Some(U256::new(1)));
+        assert_eq!(iter.next(), None);
+    }
+
+    // #[test]
+    // fn parallel_iterates() {
+    //     let range = U256Range::new(
+    //         U256::from_str_hex("0x0").unwrap(),
+    //         U256::from_str_hex("0x2").unwrap(),
+    //     );
+    //     let mut iter = range.into_par_iter();
+    //     assert_eq!(iter.next(), Some(U256::new(0)));
+    //     assert_eq!(iter.next(), Some(U256::new(1)));
+    //     assert_eq!(iter.next(), None);
+    // }
 }
