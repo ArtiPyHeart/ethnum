@@ -1,10 +1,14 @@
 //! Root module for 256-bit unsigned integer type.
 
-use alloc::vec::IntoIter;
+use alloc::vec::Vec;
 use core::num::ParseIntError;
 
-use rayon::iter::{IndexedParallelIterator, ParallelIterator};
-use rayon::iter::plumbing::{bridge, Consumer, ProducerCallback, UnindexedConsumer};
+use rayon::{
+    iter::plumbing::{bridge, Producer},
+    prelude::*,
+};
+
+extern crate std;
 
 use crate::I256;
 
@@ -281,9 +285,183 @@ impl Iterator for U256Range {
     }
 }
 
+type Data = U256;
+
+pub struct DataCollection {
+    pub data: Vec<Data>,
+}
+
+impl<'a> IntoParallelIterator for &'a DataCollection {
+    type Iter = ParDataIter<'a>;
+    type Item = &'a Data;
+
+    fn into_par_iter(self) -> Self::Iter {
+        ParDataIter { data: &self.data }
+    }
+}
+
+impl<'a> IntoParallelIterator for &'a mut DataCollection {
+    type Iter = ParDataIterMut<'a>;
+    type Item = &'a mut Data;
+
+    fn into_par_iter(self) -> Self::Iter {
+        ParDataIterMut { data: self }
+    }
+}
+
+impl DataCollection {
+    pub fn new<I>(data: I) -> Self
+    where
+        I: IntoIterator<Item = Data>,
+    {
+        Self {
+            data: data.into_iter().collect(),
+        }
+    }
+}
+
+pub struct ParDataIter<'a> {
+    data: &'a [Data],
+}
+
+pub struct ParDataIterMut<'a> {
+    data: &'a mut DataCollection,
+}
+
+impl<'a> ParallelIterator for ParDataIter<'a> {
+    type Item = &'a Data;
+
+    fn drive_unindexed<C>(self, consumer: C) -> C::Result
+    where
+        C: rayon::iter::plumbing::UnindexedConsumer<Self::Item>,
+    {
+        bridge(self, consumer)
+    }
+
+    fn opt_len(&self) -> Option<usize> {
+        Some(<Self as IndexedParallelIterator>::len(self))
+    }
+}
+
+impl<'a> ParallelIterator for ParDataIterMut<'a> {
+    type Item = &'a mut Data;
+    fn drive_unindexed<C>(self, consumer: C) -> C::Result
+    where
+        C: rayon::iter::plumbing::UnindexedConsumer<Self::Item>,
+    {
+        bridge(self, consumer)
+    }
+
+    fn opt_len(&self) -> Option<usize> {
+        Some(<Self as IndexedParallelIterator>::len(self))
+    }
+}
+
+impl<'a> IndexedParallelIterator for ParDataIter<'a> {
+    fn with_producer<CB: rayon::iter::plumbing::ProducerCallback<Self::Item>>(
+        self,
+        callback: CB,
+    ) -> CB::Output {
+        let data_producer = DataProducer::from(self);
+        callback.callback(data_producer)
+    }
+
+    fn drive<C: rayon::iter::plumbing::Consumer<Self::Item>>(self, consumer: C) -> C::Result {
+        bridge(self, consumer)
+    }
+
+    fn len(&self) -> usize {
+        self.data.len()
+    }
+}
+
+impl<'a> IndexedParallelIterator for ParDataIterMut<'a> {
+    fn with_producer<CB: rayon::iter::plumbing::ProducerCallback<Self::Item>>(
+        self,
+        callback: CB,
+    ) -> CB::Output {
+        let producer = DataProducerMut::from(self);
+        callback.callback(producer)
+    }
+
+    fn drive<C: rayon::iter::plumbing::Consumer<Self::Item>>(self, consumer: C) -> C::Result {
+        bridge(self, consumer)
+    }
+
+    fn len(&self) -> usize {
+        self.data.data.len()
+    }
+}
+
+pub struct DataProducer<'a> {
+    data_slice: &'a [Data],
+}
+
+pub struct DataProducerMut<'a> {
+    data_slice: &'a mut [Data],
+}
+
+impl<'a> From<&'a mut [Data]> for DataProducerMut<'a> {
+    fn from(data_slice: &'a mut [Data]) -> Self {
+        Self { data_slice }
+    }
+}
+
+impl<'a> From<ParDataIter<'a>> for DataProducer<'a> {
+    fn from(iterator: ParDataIter<'a>) -> Self {
+        Self {
+            data_slice: &iterator.data,
+        }
+    }
+}
+
+impl<'a> From<ParDataIterMut<'a>> for DataProducerMut<'a> {
+    fn from(iterator: ParDataIterMut<'a>) -> Self {
+        Self {
+            data_slice: &mut iterator.data.data,
+        }
+    }
+}
+
+impl<'a> Producer for DataProducer<'a> {
+    type Item = &'a Data;
+    type IntoIter = std::slice::Iter<'a, Data>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.data_slice.iter()
+    }
+
+    fn split_at(self, index: usize) -> (Self, Self) {
+        let (left, right) = self.data_slice.split_at(index);
+        (
+            DataProducer { data_slice: left },
+            DataProducer { data_slice: right },
+        )
+    }
+}
+
+impl<'a> Producer for DataProducerMut<'a> {
+    type Item = &'a mut Data;
+    type IntoIter = std::slice::IterMut<'a, Data>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.data_slice.iter_mut()
+    }
+
+    fn split_at(self, index: usize) -> (Self, Self) {
+        let (left, right) = self.data_slice.split_at_mut(index);
+        (Self::from(left), Self::from(right))
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::uint::{U256, U256Range};
+    use alloc::vec;
+    use alloc::vec::Vec;
+
+    use rayon::prelude::*;
+
+    use crate::uint::{DataCollection, U256Range, U256};
 
     #[test]
     #[allow(clippy::float_cmp)]
@@ -303,15 +481,19 @@ mod tests {
         assert_eq!(iter.next(), None);
     }
 
-    // #[test]
-    // fn parallel_iterates() {
-    //     let range = U256Range::new(
-    //         U256::from_str_hex("0x0").unwrap(),
-    //         U256::from_str_hex("0x2").unwrap(),
-    //     );
-    //     let mut iter = range.into_par_iter();
-    //     assert_eq!(iter.next(), Some(U256::new(0)));
-    //     assert_eq!(iter.next(), Some(U256::new(1)));
-    //     assert_eq!(iter.next(), None);
-    // }
+    #[test]
+    fn parallel_iterates() {
+        let data = DataCollection::new(vec![
+            U256::new(0),
+            U256::new(1),
+            U256::new(2),
+        ]);
+        let res: Vec<i32> = data.into_par_iter()
+            .map(|x| match x.as_i32() {
+                0 => 0,
+                1 => 1,
+                _ => -1,
+            }).collect();
+        assert_eq!(res, vec![0, 1, -1]);
+    }
 }
