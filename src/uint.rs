@@ -1,6 +1,6 @@
 //! Root module for 256-bit unsigned integer type.
 
-use alloc::vec::Vec;
+// use alloc::vec::Vec;
 use core::num::ParseIntError;
 
 use rayon::{
@@ -9,6 +9,7 @@ use rayon::{
 };
 
 extern crate std;
+use std::vec::Vec;
 
 use crate::I256;
 
