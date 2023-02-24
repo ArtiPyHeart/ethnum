@@ -261,7 +261,7 @@ impl U256 {
     }
 }
 
-struct U256Range {
+pub struct U256Range {
     start: U256,
     end: U256,
 }
