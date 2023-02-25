@@ -268,7 +268,8 @@ pub struct U256Range {
 }
 
 impl U256Range {
-    fn new(start: U256, end: U256) -> Self {
+    /// U256Range constructor
+    pub fn new(start: U256, end: U256) -> Self {
         Self { start, end }
     }
 }
