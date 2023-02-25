@@ -261,6 +261,7 @@ impl U256 {
     }
 }
 
+/// range for U256
 pub struct U256Range {
     start: U256,
     end: U256,
@@ -288,7 +289,9 @@ impl Iterator for U256Range {
 
 type Data = U256;
 
+/// parallel iter for U256
 pub struct DataCollection {
+    /// container for U256
     pub data: Vec<Data>,
 }
 
@@ -310,7 +313,9 @@ impl<'a> IntoParallelIterator for &'a mut DataCollection {
     }
 }
 
+/// U256 parallel iter collector
 impl DataCollection {
+    /// constructor
     pub fn new<I>(data: I) -> Self
     where
         I: IntoIterator<Item = Data>,

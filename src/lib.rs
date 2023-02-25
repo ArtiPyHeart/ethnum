@@ -131,12 +131,12 @@ pub mod internal {
 
 /// Convenience re-export of 256-integer types and as- conversion traits.
 pub mod prelude {
-    pub use crate::{AsI256, AsU256, I256, U256};
+    pub use crate::{AsI256, AsU256, I256, U256, U256Range, DataCollection};
 }
 
 pub use crate::{
     int::{AsI256, I256},
-    uint::{AsU256, U256},
+    uint::{AsU256, U256, U256Range, DataCollection},
 };
 
 /// A 256-bit signed integer type.
