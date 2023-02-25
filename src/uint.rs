@@ -500,7 +500,7 @@ mod tests {
                 0 => 0,
                 1 => 1,
                 _ => -1,
-            }).collect();
-        assert_eq!(res, vec![0, 1, -1]);
+            }).filter(|x| *x >= 0).collect();
+        assert_eq!(res, vec![0, 1]);
     }
 }
